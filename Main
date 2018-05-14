@@ -1,0 +1,124 @@
+#from input import *
+import glob, os
+import pandas as pd
+import xml.etree.ElementTree as ET
+
+
+
+class XML2DataFrame:
+
+    def __init__(self, xml_data):
+        self.root = ET.XML(xml_data)
+
+    def parse_root(self, root):
+        """Return a list of dictionaries from the text
+         and attributes of the children under this XML root."""
+        return list(filter(lambda x: x is not None, [self.parse_element(child) for child in iter(root)]))
+
+
+    def parse_element(self, element):
+        #results = {}
+        if element.tag == 'SEM21':
+            #results['SEM21']
+            return self.parse_middle(element)
+        if element.tag == 'SEM02':
+            return self.parse_middle(element)
+
+
+        for child in list(element):
+            child_result = self.parse_element(child)
+            if child_result is not None:
+                return child_result
+                #if tag not in results.keys():
+                #    results[tag] = []
+                #results[tag].append(child_result)
+
+        return None
+
+    def parse_middle(self, element):
+        boards = []
+        for child in list(element):
+            if child.tag == 'BOARD':
+                board = self.parse_board(child)
+            else:
+                board = self.parse_middle(child)
+
+            if board is not None:
+                boards.append(board)
+
+        if len(boards) > 0:
+            result = pd.concat(boards)
+            for key in element.keys():
+                result[key] = element.attrib.get(key)
+            return result
+
+        return None
+
+
+    def parse_board(self, board):
+        records = []
+        second_lap = []
+        for child in list(board):
+            if child.tag == 'RECORDS':
+                records.append(self.parse_record(child))
+            if child.tag == 'ACTIVATIONDATE':
+                second_lap += list(child)
+
+        for child in second_lap:
+            if child.tag == 'RECORDS':
+                records.append(self.parse_record(child))
+
+        if len(records) > 0:
+            result = pd.DataFrame(records)
+            for key in board.keys():
+                result[key] = board.attrib.get(key)
+            return result
+
+        return None
+
+
+    def parse_record(self, record):
+        result = {}
+        for key in record.keys():
+            result[key] = record.attrib.get(key)
+        return result
+
+
+    def parse_sem02(self, sem02):
+        boards = []
+        for child in list(sem02):
+            if child.tag == 'BOARD':
+                board = self.parse_board(child)
+                if(board is not None):
+                    boards.append(board)
+
+        if len(boards) > 0:
+            result = pd.concat(boards)
+            for key in sem02.keys():
+                result[key] = sem02.attrib.get(key)
+            return result
+
+        return None
+
+
+    def process_data(self):
+        """ Initiate the root XML, parse it, and return a dataframe"""
+        structure_data = self.parse_root(self.root)
+        return pd.DataFrame(structure_data[0]) if len(structure_data) > 0 else None
+
+
+def main(path=None):
+    if path:
+        os.chdir(path)
+    for file in glob.glob("*.xml"):
+        with open(file) as f:
+            xml2df = XML2DataFrame(f.read())
+            xml_dataframe = xml2df.process_data()
+            if xml_dataframe is not None:
+                xml_dataframe.to_csv(file.replace('xml', 'csv'), index=False)
+
+
+main()
+
+
+
