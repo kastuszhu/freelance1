@@ -6,17 +6,7 @@ import Import
 import Criteria
 
 repo_trade_types = 'RHJLM'
-ids = ['BoardId', 'SecurityId']
-sem21_fields = ['Volume', 'OpenPeriod',
-                'Open', 'Low', 'High', 'Close',
-                'LowOffer', 'HighBid',
-                'WAPrice', 'TrendClose', 'TrendWAP',
-                'Bid', 'Offer', 'Prev', 'MarketPrice',
-                'TrendClsPr', 'TrendWapPr',
-                'MarketPrice2', 'MarketPrice3', 'PrevLegalClosePrice', 'LegalClosePrice',
-                'MPValTrd', 'MP2ValTrd', 'MP3ValTrd',
-                'Duration']
-coeff_fields = ['liquidity', 'sigma', 'beta', 'f_plus', 'f_minus', 'spread', 'coeff_c']
+
 
 
 def find_price(prices, board, security, trade_date, trade_time):
@@ -88,10 +78,6 @@ def main(path=None, date=None, long=False):
     if (len(dfs) == 0) or (prices is None):
         return
 
-    df21 = None
-    if 'SEM21' in dfs.keys():
-        df21 = dfs['SEM21'][ids + sem21_fields]
-
     df3 = None
     if 'SEM03' in dfs.keys():
         df = dfs['SEM03']
@@ -108,10 +94,11 @@ def main(path=None, date=None, long=False):
         df = process_trades_and_bids(df, prices, 'EntryTime')
         df2 = df
 
-    coeffs = pd.read_csv('deviationcoeffs.csv', sep=';')
-    coeffs.columns = ['TradeDate', 'SecurityId'] + coeff_fields
 
-    if df21 is not None:
+    coeffs = Import.import_coeffs()
+
+    if 'SEM21' in dfs.keys():
+        df21 = dfs['SEM21']
         if df3 is not None:
             df3 = df3.merge(df21, on=['BoardId', 'SecurityId'], how='left')
             df3.Volume = df3.Volume.astype(float)

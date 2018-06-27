@@ -107,7 +107,7 @@ def get_price_diff(prices: pd.DataFrame):
 def criterion4(df: pd.DataFrame, sem21: pd.DataFrame):
     df1 = df[(df.BoardType == 'Main') & (df.TradeType == 'T')]
     df1['Eligible'] = df1[['ClientCode', 'SecurityId', 'TradeDate']].groupby(
-        ['ClientCode', 'SecurityId']).transform('count')['TradeDate'] >= 21
+        ['ClientCode', 'SecurityId']).transform('count')['TradeDate'] >= 20
     df1 = df1[df1.Eligible]
     dates = df1.TradeDate.unique()
     # print('Not enough information to calculate criterion 3 for ', groups[groups['TradeDate']<10].index)
@@ -126,7 +126,7 @@ def criterion4(df: pd.DataFrame, sem21: pd.DataFrame):
 def criterion5(df: pd.DataFrame, sem21: pd.DataFrame):
     df1 = df[(df.BoardType == 'Main') & (df.TradeType == 'T')]
     df1['Eligible'] = df1[['ClientCode', 'SecurityId', 'TradeDate']].groupby(
-        ['ClientCode', 'SecurityId']).transform('count')['TradeDate'] >= 21
+        ['ClientCode', 'SecurityId']).transform('count')['TradeDate'] >= 20
     # print('Not enough information to calculate criterion 3 for ', groups[groups['TradeDate']<10].index)
     df1 = df1[df1.Eligible]
     dates = df1.TradeDate.unique()

@@ -62,8 +62,8 @@ class XML2DataFrame:
         boards = list(filter(lambda board: board is not None, [self.parse_element(child) for child in list(self.root)]))
         return pd.concat(boards) if len(boards) > 0 else None
 
-    def process_pricees(self):
-        rows  = [self.parse_record(row) for row in  filter(lambda node: node.tag == "row", list(self.root))]
+    def process_prices(self):
+        rows  = [self.parse_record(row) for row in filter(lambda node: node.tag == "row", list(self.root))]
         if len(rows) > 0:
             return pd.DataFrame(rows)
         else:
