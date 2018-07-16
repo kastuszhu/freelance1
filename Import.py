@@ -5,26 +5,35 @@ import glob
 import requests
 from XmlParsing import XML2DataFrame
 
-#file_types = ['SEM02', 'SEM03', 'SEM21']
-file_types = ['SEM03', 'SEM21']
+file_types = ['SEM02', 'SEM03', 'SEM21']
+#file_types = ['SEM03', 'SEM21']
 import_path = None
 import_dates = [dt.date.today()]
 
 ids = ['BoardId', 'SecurityId']
+#ids = ['SecurityId']
 fields = {
-    'SEM03': ['ClientCode', 'TradeType', 'TradeDate', 'TradeTime', 'Price', 'Value', 'BuySell'],
-    'SEM21': ['Volume', 'OpenPeriod',
-                'Open', 'Low', 'High', 'Close',
-                'LowOffer', 'HighBid',
-                'WAPrice', 'TrendClose', 'TrendWAP',
-                'Bid', 'Offer', 'Prev', 'MarketPrice',
-                'TrendClsPr', 'TrendWapPr',
-                'MarketPrice2', 'MarketPrice3', 'PrevLegalClosePrice', 'LegalClosePrice',
-                'MPValTrd', 'MP2ValTrd', 'MP3ValTrd',
-                'Duration',
+    'SEM03': ['ClientCode', 'TradeType', 'SecurityType', 'TradeDate', 'TradeTime',
+              'Price', 'Value', 'Quantity', 'BuySell', 'TradeNo', 'OrderNo'],
+    'SEM02': [
+        #'ClientCode',
+              'BoardName', 'TradeDate', 'EntryTime', 'Price', 'Value', 'NumTrades', 'BuySell', 'OrderNo',
+              'OrdTypeCode', 'TrdAccId'],
+    'SEM21': ['Volume', 'TradeDate',
+                # 'OpenPeriod', 'Open',
+                # 'Low', 'High', 'Close',
+                # 'LowOffer', 'HighBid',
+                # 'WAPrice', 'TrendClose', 'TrendWAP',
+                # 'Bid', 'Offer', 'Prev', 'MarketPrice',
+                # 'TrendClsPr', 'TrendWapPr',
+                # 'MarketPrice2', 'MarketPrice3', 'PrevLegalClosePrice', 'LegalClosePrice',
+                # 'MPValTrd',
+                'MP2ValTrd', 'MP3ValTrd',
+                # 'Duration',
               ],
 }
 coeff_fields = ['liquidity', 'sigma', 'beta', 'f_plus', 'f_minus', 'spread', 'coeff_c']
+listing_fields = ['INN', 'TRADE_CODE']
 price_floats = ['CURPRICE', 'LASTPRICE', 'LEGALCLOSE']
 
 
@@ -32,20 +41,25 @@ def import_files():
     if import_path:
         os.chdir(import_path)
 
+    dates = set()
     dfs = {}
     for file_type in file_types:
         type_df  = load_deal_files(file_type)
 
         if type_df is not None:
             dfs[file_type] = type_df
+            if file_type == 'SEM03':
+                dates.update(type_df.TradeDate)
+
             #type_df.to_csv(file_type + '.csv', index=False)
         else:
             print('No %s files found or processed correctly.', file_type)
 
-    prices = get_prices()
-    if prices is not None:
-        prices.TRADETIME = pd.to_datetime(prices.TRADETIME)
-        #prices.to_csv('prices.csv', index=False)
+    if len(dates) > 0:
+        prices = get_prices(dates)
+        if prices is not None:
+            prices.TRADETIME = pd.to_datetime(prices.apply(lambda x: x.TRADEDATE + ' ' + x.TRADETIME, axis=1))
+
 
     return dfs, prices
 
@@ -120,8 +134,11 @@ def get_prices(dates=None):
 def load_deal_files(file_type):
     all_dfs = []
     dates = [date.strftime("%d%m%y") for date in import_dates]
-    xml_files = list(filter(lambda file: any([date in file for date in dates]), glob.glob('*_' + file_type + '_*.xml')))
-    csv_files = list(filter(lambda file: any([date in file for date in dates]), glob.glob('*_' + file_type + '_*.csv')))
+    #xml_files = list(filter(lambda file: any([date in file for date in dates]), glob.glob('*_' + file_type + '_*.xml')))
+    #csv_files = list(filter(lambda file: any([date in file for date in dates]), glob.glob('*_' + file_type + '_*.csv')))
+
+    xml_files =  glob.glob('*_' + file_type + '_*.xml')
+    csv_files =  glob.glob('*_' + file_type + '_*.csv')
 
     for file in xml_files:
         with open(file) as f:
@@ -129,13 +146,13 @@ def load_deal_files(file_type):
             xml_dataframe = xml2df.process_data()
 
             if xml_dataframe is not None and all([field in xml_dataframe.columns for field in fields[file_type] + ids]):
-                all_dfs.append(xml_dataframe[fields[file_type] + ids])
+                all_dfs.append(xml_dataframe[ids + fields[file_type]])
             else:
                 print('File %s doesn\'t contain relevant data.', file)
 
     for file in csv_files:
         df = pd.read_csv(file, sep=';')
-        all_dfs.append(df[fields[file_type] + ids])
+        all_dfs.append(df[ids + fields[file_type]])
 
     if len(all_dfs) > 0:
         sem03_df = pd.concat(all_dfs)
@@ -148,9 +165,34 @@ def load_deal_files(file_type):
     return None
 
 
+def import_if(dates=import_dates):
+    dates = [date.strftime("%d%m%Y") for date in dates]
+    files = list(filter(lambda file: any([date in file for date in dates]), glob.glob('events_report_*.csv')))
+    all = []
+    for file in files:
+        all.append(pd.read_csv(file, sep=';', dtype=object))
+    if_messages = pd.concat(all)
+    listing = import_listing()
+    if_messages.columns = ['message_date', 'message_time', 'message_type', 'message_id', 'INN', 'OGRN', 'ShortName']
+    if_messages = if_messages.merge(listing, on='INN', how='left')
+
+    if_messages.message_time = pd.to_datetime(
+        if_messages.apply(lambda x: x.message_date + ' ' + x.message_time, axis=1))
+    return if_messages
+
+
+def import_listing():
+    listing = pd.read_csv('ListingSecurityList.csv', sep=';', dtype={'INN': object, 'TRADE_CODE': object})[listing_fields]
+    listing.columns = ['INN', 'SecurityId']
+    listing = listing.dropna().drop_duplicates('INN')
+    return listing
+
+
 def import_coeffs():
     coeffs = pd.read_csv('deviationcoeffs.csv', sep=';')
     coeffs.columns = ['TradeDate', 'SecurityId'] + coeff_fields
     return coeffs
+
+
 
 
