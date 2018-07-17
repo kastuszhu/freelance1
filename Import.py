@@ -191,7 +191,30 @@ def import_listing():
     return listing
 
 
-def import_coeffs():
-    coeffs = pd.read_csv('deviationcoeffs.csv', sep=';')
-    coeffs.columns = ['TradeDate', 'SecurityId'] + coeff_fields
-    return coeffs
+def import_coeffs(dates =None):
+    all_coeffs = []
+
+
+    #coeff_files = list(filter(lambda x: 'deviationcoeffs*.csv' in x, os.listdir()))
+    if dates is None:
+        dates_list = import_dates
+    else:
+        dates_list = dates
+
+    glob_glob = glob.glob('deviationcoeffs*.csv')
+    files = list(filter(lambda file: any([date.replace('-', '') in file
+                                          if type(date) is str
+                                          else date.strftime("%Y%m%d") in file for date in dates_list]),
+                        glob_glob))
+
+    for file in files:
+        coeffs = pd.read_csv(file, sep=';')
+        all_coeffs.append(coeffs)
+
+    if len(all_coeffs) > 0:
+        coeffs = pd.concat(all_coeffs)
+        coeffs.columns = ['TradeDate', 'SecurityId'] + coeff_fields
+        return coeffs
+    else:
+        return None
+

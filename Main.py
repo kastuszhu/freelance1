@@ -142,9 +142,9 @@ def main(path=None):
         df21['Volume'] = df21['Volume'].astype(float)
         if df3 is not None:
             df3 = check_volume_breaches(df3, df21)
-
+            df3_dates = df3.TradeDate.unique()
             try:
-                coeffs = Import.import_coeffs()
+                coeffs = Import.import_coeffs(df3_dates)
                 if coeffs is not None:
                     df3 = df3.merge(coeffs, on=['TradeDate', 'SecurityId'], how='left')
             except:
@@ -153,7 +153,7 @@ def main(path=None):
             df3 = Criteria.calculate_criteria(df3, df21, True)
 
             try:
-                if_messages = Import.import_if(df3.TradeDate.unique())
+                if_messages = Import.import_if(df3_dates)
                 df3 = check_if(df3, if_messages, [])
             except Exception as e:
                 print(f'Couldn\'t check interfax: {e}')
