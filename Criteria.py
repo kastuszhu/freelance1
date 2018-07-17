@@ -62,11 +62,17 @@ def criterion2(df: pd.DataFrame, sem21: pd.DataFrame):
     df1 = df[~df.ClientCode.isnull() & df.TradeType.isin(criterion2_types)].copy()
     df1['pair'] = (df1[['SecurityId', 'TradeNo']]
                    .groupby(['TradeNo']).transform('count') > 1)
+
+    if not df1.pair.any():
+        print('No trade pairs found for criterion 2.')
+        df['CR2']=False
+        return df
+
     df1.Quantity = df1.Quantity.astype(float)
     pair_sum = df1[['TradeDate', 'ClientCode', 'SecurityId', 'pair', 'Quantity']].groupby(
         ['TradeDate', 'ClientCode', 'SecurityId', 'pair']).sum()
 
-    pair_sum.to_excel('cr2_sum.xlsx')
+
     share = pair_sum.groupby(level=[0, 1, 2]).transform(lambda x: x / x.sum())
     share2 = pair_sum.groupby(level=[0, 1]).transform(lambda x: x / x.sum())
     pair_sum['share'] = share
@@ -89,7 +95,7 @@ def criterion2(df: pd.DataFrame, sem21: pd.DataFrame):
 def criterion3(df: pd.DataFrame):
     df1 = df[~df.ClientCode.isnull() & (df.TradeType =='T')].copy()
     if df.TradeDate.unique().shape[0] < 10:
-        print ('Not trade data to calculate criterion 3.')
+        print ('Not enough dates to calculate criterion 3.')
         df['CR3'] = False
         return df
     else:
@@ -148,15 +154,15 @@ def get_price_diff(prices: pd.DataFrame):
 def criterion4(df: pd.DataFrame, sem21: pd.DataFrame):
     #df1 = df[(df.BoardType == 'Main') & (df.TradeType == 'T')]
     df1 = df[(df.TradeType == 'T')].copy()
-    #df1['Eligible'] = df1[['ClientCode', 'SecurityId', 'TradeDate']].groupby(
-    #    ['ClientCode', 'SecurityId']).transform('count')['TradeDate'] >= 20
-    #df1 = df1[df1.Eligible]
     dates = df1.TradeDate.unique()
-    # print('Not enough information to calculate criterion 3 for ', groups[groups['TradeDate']<10].index)
+
+    if dates.shape[0] <= 1:
+        print('Not enough dates to calculate criterion 4.')
+        df['CR4'] = False
+        return df
 
     q = df1[['SecurityId', 'Quantity']].groupby('SecurityId').sum().reset_index()
     v = sem21[sem21.TradeDate.isin(dates)][['SecurityId', 'Volume']].groupby('SecurityId').sum().reset_index()
-    #v = sem21[['SecurityId', 'Volume']].groupby('SecurityId').sum().reset_index()
     q = q.merge(v, on='SecurityId', how='left').fillna(0.0)
     ids = q[q.Quantity/q.Volume >= 0.25]['SecurityId'].values
     df2 = df1[df1.SecurityId.isin(ids)][['ClientCode', 'SecurityId', 'Quantity']].groupby(['SecurityId', 'ClientCode']).sum()\
@@ -169,25 +175,20 @@ def criterion4(df: pd.DataFrame, sem21: pd.DataFrame):
 
 
 def criterion5(df: pd.DataFrame, sem21: pd.DataFrame):
-    #df1 = df[(df.BoardType == 'Main') & (df.TradeType == 'T')]
     df1 = df[(df.TradeType == 'T')].copy()
-    #df1['Eligible'] = df1[['ClientCode', 'SecurityId', 'TradeDate']].groupby(
-    #    ['ClientCode', 'SecurityId']).transform('count')['TradeDate'] >= 20
-    # print('Not enough information to calculate criterion 3 for ', groups[groups['TradeDate']<10].index)
-    #df1 = df1[df1.Eligible]
+    df21 = sem21[sem21.BoardType == 'MAIN'].copy()
     dates = df1.TradeDate.unique()
 
     q = df1[['ClientCode', 'SecurityId', 'TradeDate', 'Quantity']].groupby(['TradeDate', 'ClientCode', 'SecurityId']).sum().reset_index()
-    v = sem21[sem21.TradeDate.isin(dates)][['SecurityId', 'TradeDate', 'Volume']].groupby(['TradeDate','SecurityId']).sum().reset_index()
-    #v = sem21[['SecurityId', 'TradeDate', 'Volume']].groupby(['TradeDate','SecurityId']).sum().reset_index()
-    q = q.merge(v, on=['SecurityId', 'TradeDate'], how='left').fillna(0.0)
-    q.to_excel('cr5.xlsx',index=False)
+    v = df21[df21.TradeDate.isin(dates)][['SecurityId', 'TradeDate', 'Volume']].groupby(['TradeDate','SecurityId']).sum().reset_index()
+    q = q.merge(v, on=['SecurityId', 'TradeDate'], how='left').fillna(pd.np.nan)
+    q['ratio'] = q.Quantity/q.Volume
+    q['CR5'] = q.ratio >= 0.5
+    q.to_excel('cr5.xlsx', index=False)
 
-    q['CR5'] = q.Quantity/q.Volume >= 0.5
-    #q = q[['ClientCode', 'TradeDate', 'CR5']].groupby(['ClientCode', 'TradeDate']).max().reset_index()
     long_term = (q[['ClientCode', 'SecurityId', 'CR5']].groupby(['ClientCode', 'SecurityId']).transform('sum') > 5)
     q['CR5'] = q['CR5'] | long_term.CR5
-    df = df.merge(q[['ClientCode','SecurityId', 'TradeDate', 'CR5']], on=['ClientCode', 'SecurityId', 'TradeDate'], how='left')
+    df = df.merge(q[['ClientCode', 'SecurityId', 'TradeDate', 'CR5']], on=['ClientCode', 'SecurityId', 'TradeDate'], how='left')
     df.CR5 = df.CR5.fillna(False)
     return df
 
@@ -211,7 +212,7 @@ def process_fr(df, type_codes, headers):
         df[headers[0]] = ''
         df[headers[1]] = ''
         return df
-    df1.EntryTime = pd.to_datetime(df1.EntryTime)
+    df1.EntryTime = pd.to_datetime(df1.apply(lambda x: str(x.TradeDate) + ' ' + str(x.EntryTime),axis=1)).dt.tz_localize(None)
     gr_all = []
 
     for key, gr in df1.groupby(['TradeDate', 'SecurityId']):
@@ -219,7 +220,7 @@ def process_fr(df, type_codes, headers):
         group[headers[0]] = \
             group.apply(lambda x:
                         '; '.join(
-                            group[fr_filtering(group,x)]
+                            group[fr_filtering(group, x)]
                                 .OrderNo.astype(str).values[1:]), axis=1)
 
         group[headers[1]] = \

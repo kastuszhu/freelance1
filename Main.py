@@ -39,10 +39,10 @@ def find_price(prices, board, security, trade_date, trade_time):
         return row.CURPRICE, row.TRADETIME, found, None, None, None, None
 
 
-def process_trades_and_bids(df: pd.DataFrame, prices: pd.DataFrame, time_field: str, filterr):
-    df.loc[:, time_field] = pd.to_datetime(df[time_field])
+def process_trades_and_bids(df: pd.DataFrame, prices: pd.DataFrame,  filterr):
+    #df.TradeTime = pd.to_datetime(df.apply(lambda x: str(x.TradeDate) + ' ' + str(x.TradeTime),axis=1)).dt.tz_localize(None)
     df[['CurPrice', 'CurPriceTime', 'CurPriceFound', 'LastP1', 'LastP2', 'LastP3', 'LastTime']] = df.apply(
-        lambda x: pd.Series(find_price(prices, x.BoardId, x.SecurityId, x.TradeDate, x[time_field])), axis=1)
+        lambda x: pd.Series(find_price(prices, x.BoardId, x.SecurityId, x.TradeDate, x.TradeTime)), axis=1)
     df.loc[filterr, 'CurPriceRatio'] = (df[filterr].Price.astype(float) / df[filterr].CurPrice.astype(float) - 1).abs()
     return df
 
@@ -96,7 +96,6 @@ def if_filtering(x, if_messages: pd.DataFrame, blue_chips):
 
 
 def check_if(df, if_messages, blue_chips):
-    df.TradeTime = pd.to_datetime(df.apply(lambda x: str(x.TradeDate) + ' ' + str(x.TradeTime), axis=1))
     df['interfax'] = df.apply(lambda x: '; '.join(if_messages[if_filtering(x, if_messages, blue_chips)].message_id),axis=1)
     return df
 
@@ -122,7 +121,8 @@ def main(path=None):
         df = dfs['SEM03']
         if df.shape[0] > 0:
             filterr = df.TradeType.apply(lambda trade_type: trade_type not in repo_trade_types)
-            df = process_trades_and_bids(df, prices, 'TradeTime', filterr)
+            df.TradeTime = pd.to_datetime(df.apply(lambda x: str(x.TradeDate) + ' ' + str(x.TradeTime), axis=1)).dt.tz_localize(None)
+            df = process_trades_and_bids(df, prices, filterr)
             df = populate_trades_intervals(df)
             df3 = df
 
@@ -153,7 +153,7 @@ def main(path=None):
             df3 = Criteria.calculate_criteria(df3, df21, True)
 
             try:
-                if_messages = Import.import_if(pd.to_datetime(df3.TradeDate.unique()))
+                if_messages = Import.import_if(df3.TradeDate.unique())
                 df3 = check_if(df3, if_messages, [])
             except Exception as e:
                 print(f'Couldn\'t check interfax: {e}')
